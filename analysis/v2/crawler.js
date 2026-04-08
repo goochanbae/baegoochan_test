@@ -41,6 +41,10 @@ async function createCrawler(url, options = {}) {
 
 async function stabilizePage(page) {
   await page.addStyleTag({
+    url: 'https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap'
+  }).catch(() => {});
+
+  await page.addStyleTag({
     content: `
       body { overflow-x: hidden !important; }
       * {
@@ -57,6 +61,9 @@ async function stabilizePage(page) {
         background-attachment: scroll !important;
         will-change: auto !important;
       }
+      html, body, button, input, textarea, select, a, p, span, div, h1, h2, h3, h4, h5, h6, li, strong, em, label {
+        font-family: "Noto Sans KR", "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif !important;
+      }
     `
   });
 
@@ -71,6 +78,13 @@ async function stabilizePage(page) {
     window.scrollTo(0, document.body.scrollHeight);
   });
   await page.waitForTimeout(1000);
+  await page.evaluate(async () => {
+    if (document.fonts?.ready) {
+      try {
+        await document.fonts.ready;
+      } catch {}
+    }
+  });
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(300);
 }
