@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UX Spatial Viewer V3</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+    html, body {
+      margin: 0;
+      background:
+        radial-gradient(circle at top left, rgba(31, 98, 255, 0.16), transparent 32%),
+        radial-gradient(circle at bottom right, rgba(12, 181, 155, 0.14), transparent 28%),
+        #060b13;
+      color: #edf3ff;
+      font-family: "Pretendard", -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" src="/components/TimelineBar.jsx"></script>
+  <script type="text/babel" src="/components/FrameViewer.jsx"></script>
+  <script type="text/babel" src="/components/V3AnalysisPanel.jsx"></script>
+
+  <script type="text/babel">
+    const { useEffect, useMemo, useState } = React;
+
+    const T = {
+      mode: '현재 모드',
+      title: 'V3 타임라인 UX 분석기',
+      subtitle: 'V1 DOM 구조 + Gemma 멀티모달 프레임 파악 + OpenRouter 추론',
+      startFail: 'V3 분석 시작 실패',
+      startMessage: 'V3 분석을 시작했습니다. Gemma 멀티모달 프레임 분석 후 OpenRouter 추론이 순차적으로 실행됩니다.',
+      buttonIdle: 'V3 분석 실행',
+      buttonRunning: 'V3 분석 중...',
+      status: '상태',
+      running: '실행 중',
+      idle: '대기 중',
+      lastUrl: '마지막 URL',
+      progressReady: '분석 준비 중',
+      progressStarted: '분석 시작',
+      progressDom: 'DOM 분석 완료',
+      progressFrame: '프레임 수집 완료',
+      progressVisual: '멀티모달 프레임 분석 진행 중',
+      progressChunkPlan: '청크 분석 계획 생성 중',
+      progressChunk: '청크 분석 진행 중',
+      progressChunkFallback: '일부 청크 대체 분석 적용',
+      progressSynthesis: '전체 통합 추론 진행 중',
+      progressReasonRetry: '최종 추론 재시도 중',
+      progressReasonRecovered: '최종 추론 재시도 완료',
+      progressDone: '분석 완료',
+      logs: '실행 로그',
+      noLogs: '로그 없음',
+      history: '히스토리',
+      historyPlaceholder: '분석 결과 선택',
+      noResult: '선택된 분석 결과가 없습니다. 히스토리에서 결과를 골라 불러오세요.'
+    };
+
+    function parseProgress(status) {
+      const logs = status?.logs || [];
+      const latest = logs[logs.length - 1] || '';
+      const joined = logs.join('\n');
+
+      const frameCollection = latest.match(/Frames:\s*(\d+)/i);
+      if (frameCollection) return { label: `${T.progressFrame} (${frameCollection[1]}개)`, percent: 28 };
+
+      const multimodalProgress = latest.match(/V3 multimodal chunk (?:start|complete)\s+(\d+)\/(\d+)/i);
+      if (multimodalProgress) {
+        const current = Number(multimodalProgress[1]);
+        const total = Number(multimodalProgress[2]);
+        const ratio = total > 0 ? current / total : 0;
+        return {
+          label: `${T.progressVisual} (${current}/${total})`,
+          percent: Math.min(82, Math.max(36, Math.round(30 + ratio * 48)))
+        };
+      }
+
+      const chunkPlan = joined.match(/V3 multimodal chunk plan\. Chunks:\s*(\d+), chunk size:\s*(\d+)/i);
+      if (chunkPlan) {
+        return {
+          label: `${T.progressChunkPlan} (${chunkPlan[1]}개)`,
+          percent: 50
+        };
+      }
+
+      const chunkFailed = latest.match(/V3 multimodal chunk failed\s+(\d+)\/(\d+)/i);
+      if (chunkFailed) {
+        const current = Number(chunkFailed[1]);
+        const total = Number(chunkFailed[2]);
+        return {
+          label: `${T.progressChunkFallback} (${current}/${total})`,
+          percent: Math.min(88, Math.max(58, Math.round(54 + (current / Math.max(total, 1)) * 32)))
+        };
+      }
+
+      if (/V3 synthesis reasoning start/i.test(latest)) {
+        return { label: T.progressSynthesis, percent: 90 };
+      }
+
+      if (/V3 synthesis compact retry start/i.test(latest)) {
+        return { label: T.progressReasonRetry, percent: 93 };
+      }
+
+      if (/Gemma synthesis recovered/i.test(latest)) return { label: T.progressReasonRecovered, percent: 96 };
+      if (/Gemma synthesis failed/i.test(latest)) return { label: T.progressReasonRetry, percent: 91 };
+      if (/DOM analysis complete/i.test(latest)) return { label: T.progressDom, percent: 15 };
+      if (/Started V3 analysis/i.test(latest)) return { label: T.progressStarted, percent: 5 };
+      if (status?.running) return { label: T.progressReady, percent: 3 };
+      if (status?.exitCode === 0) return { label: T.progressDone, percent: 100 };
+      return { label: T.idle, percent: 0 };
+    }
+
+    function App() {
+      const [status, setStatus] = useState(null);
+      const [result, setResult] = useState(null);
+      const [historyItems, setHistoryItems] = useState([]);
+      const [selectedHistoryId, setSelectedHistoryId] = useState('');
+      const [url, setUrl] = useState('https://saltcake.com');
+      const [selectedFrameIndex, setSelectedFrameIndex] = useState(0);
+      const [selectedIssue, setSelectedIssue] = useState(null);
+      const [autoplay, setAutoplay] = useState(false);
+      const [message, setMessage] = useState('');
+      const [pendingAutoLoadUrl, setPendingAutoLoadUrl] = useState('');
+      const [lastCompletedRunKey, setLastCompletedRunKey] = useState('');
+
+      async function loadStatus() {
+        const res = await fetch('/api/v3/status');
+        if (!res.ok) return;
+        setStatus(await res.json());
+      }
+
+      async function loadHistory() {
+        const res = await fetch('/api/v3/history');
+        if (!res.ok) return;
+        setHistoryItems(await res.json());
+      }
+
+      async function loadHistoryResult(id) {
+        if (!id) {
+          setResult(null);
+          setSelectedHistoryId('');
+          setSelectedFrameIndex(0);
+          setSelectedIssue(null);
+          return;
+        }
+
+        const res = await fetch(`/api/v3/history/${encodeURIComponent(id)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setResult(data);
+        setSelectedHistoryId(id);
+        setSelectedFrameIndex(0);
+        setSelectedIssue(null);
+      }
+
+      useEffect(() => {
+        loadStatus();
+        loadHistory();
+      }, []);
+
+      useEffect(() => {
+        const timer = setInterval(async () => {
+          const res = await fetch('/api/v3/status');
+          if (!res.ok) return;
+          const nextStatus = await res.json();
+          setStatus(nextStatus);
+          if (nextStatus?.running) {
+            return;
+          }
+          await loadHistory();
+        }, 3000);
+        return () => clearInterval(timer);
+      }, []);
+
+      useEffect(() => {
+        if (!pendingAutoLoadUrl || !status || status.running || status.exitCode !== 0) return;
+        const runKey = `${status.endedAt || ''}|${status.lastUrl || ''}`;
+        if (!runKey || runKey === lastCompletedRunKey) return;
+
+        (async () => {
+          const res = await fetch('/api/v3/history');
+          if (!res.ok) return;
+          const items = await res.json();
+          setHistoryItems(items);
+          const latestMatch = items.find(item => item.url === pendingAutoLoadUrl) || items[0];
+          if (latestMatch?.id) {
+            await loadHistoryResult(latestMatch.id);
+            setMessage('최신 분석 결과를 불러왔습니다.');
+          }
+          setLastCompletedRunKey(runKey);
+          setPendingAutoLoadUrl('');
+        })();
+      }, [status, pendingAutoLoadUrl, lastCompletedRunKey]);
+
+      useEffect(() => {
+        if (!autoplay || !result?.timeline?.length) return;
+        const timer = setInterval(() => {
+          setSelectedFrameIndex(current => (current + 1) % result.timeline.length);
+        }, 1800);
+        return () => clearInterval(timer);
+      }, [autoplay, result]);
+
+      const frames = result?.timeline || [];
+      const overlays = useMemo(() => {
+        const dom = result?.dom_analysis || {};
+        return [...(dom.clickable || []), ...(dom.cards || [])];
+      }, [result]);
+      const highlightedElementIds = useMemo(() => {
+        if (!selectedIssue) return [];
+        return (selectedIssue.related_elements || []).map(item => item.id);
+      }, [selectedIssue]);
+      const progress = useMemo(() => parseProgress(status), [status]);
+
+      async function startAnalysis() {
+        setMessage('');
+        setResult(null);
+        setSelectedHistoryId('');
+        setSelectedFrameIndex(0);
+        setSelectedIssue(null);
+        setPendingAutoLoadUrl(url.trim());
+        const res = await fetch('/api/analyze-v3', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: url.trim() })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setPendingAutoLoadUrl('');
+          setMessage(data.error || T.startFail);
+          return;
+        }
+        setStatus(data.status);
+        setMessage(T.startMessage);
+      }
+
+      function selectIssue(issue) {
+        setSelectedIssue(issue);
+        if (Number.isInteger(issue.frame_index)) setSelectedFrameIndex(issue.frame_index);
+      }
+
+      const currentFrame = frames[selectedFrameIndex] || null;
+
+      return (
+        <div className="min-h-screen px-6 py-6">
+          <div className="mx-auto max-w-[1540px]">
+            <div className="mb-6 flex items-center justify-between gap-4">
+              <div>
+                <a href="/" className="text-sm text-cyan-200 hover:text-cyan-100">버전 선택으로 돌아가기</a>
+                <div className="text-xs uppercase tracking-[0.32em] text-slate-500">UX Spatial Viewer</div>
+                <h1 className="mt-2 text-[28px] font-semibold tracking-tight">{T.title}</h1>
+                <p className="mt-2 text-slate-400">{T.subtitle}</p>
+              </div>
+              <div className="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-4 py-2 text-sm text-cyan-100">
+                {T.mode}: <strong>V3</strong>
+              </div>
+            </div>
+
+            <div className="mb-6 rounded-[28px] border border-white/10 bg-[#0B111B] p-4 shadow-[0_24px_64px_rgba(0,0,0,0.25)]">
+              <div className="flex flex-col gap-3 lg:flex-row">
+                <input
+                  value={url}
+                  onChange={e => setUrl(e.target.value)}
+                  className="flex-1 rounded-2xl border border-white/10 bg-[#111827] px-4 py-3 text-slate-100 outline-none focus:border-cyan-300"
+                  placeholder="https://example.com"
+                />
+                <button
+                  type="button"
+                  onClick={startAnalysis}
+                  disabled={status?.running}
+                  className="rounded-2xl bg-cyan-300 px-5 py-3 font-semibold text-slate-950 hover:bg-cyan-200 disabled:opacity-40"
+                >
+                  {status?.running ? T.buttonRunning : T.buttonIdle}
+                </button>
+              </div>
+
+              <div className="mt-3 flex flex-col gap-2 lg:flex-row lg:items-center">
+                <div className="text-sm text-slate-400 lg:w-20">{T.history}</div>
+                <select
+                  value={selectedHistoryId}
+                  onChange={e => loadHistoryResult(e.target.value)}
+                  className="w-full rounded-2xl border border-white/10 bg-[#111827] px-4 py-3 text-slate-100 outline-none focus:border-cyan-300"
+                >
+                  <option value="">{T.historyPlaceholder}</option>
+                  {historyItems.map(item => (
+                    <option key={item.id} value={item.id}>
+                      {`${item.createdAt} / ${item.url}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-white/10 bg-[#0F1726] p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="text-sm text-slate-200">{progress.label}</div>
+                  <div className="text-sm text-cyan-200">{progress.percent}%</div>
+                </div>
+                <div className="mt-3 h-2 rounded-full bg-white/10">
+                  <div className="h-2 rounded-full bg-cyan-300 transition-all duration-500" style={{ width: `${progress.percent}%` }} />
+                </div>
+                <div className="mt-3 text-sm text-slate-400">
+                  {T.status}: {status?.running ? T.running : T.idle}
+                  {status?.lastUrl ? ` / ${T.lastUrl}: ${status.lastUrl}` : ''}
+                </div>
+                {message ? <div className="mt-2 text-sm text-slate-300">{message}</div> : null}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
+              <div className="min-w-0 space-y-5">
+                <window.FrameViewer
+                  frame={currentFrame}
+                  frames={frames}
+                  overlays={overlays}
+                  highlightedElementIds={highlightedElementIds}
+                  onPrev={() => setSelectedFrameIndex(current => Math.max(0, current - 1))}
+                  onNext={() => setSelectedFrameIndex(current => Math.min(Math.max(0, frames.length - 1), current + 1))}
+                  onToggleAutoplay={() => setAutoplay(v => !v)}
+                  autoplay={autoplay}
+                  onElementSelect={id => {
+                    if (!result) return;
+                    const issue = (result?.enhanced_issues || []).find(item =>
+                      (item.related_elements || []).some(rel => rel.id === id)
+                    );
+                    if (issue) selectIssue(issue);
+                  }}
+                />
+                <div className="w-full">
+                  <window.TimelineBar frames={frames} selectedIndex={selectedFrameIndex} onSelect={setSelectedFrameIndex} />
+                </div>
+                {!result ? (
+                  <section className="rounded-2xl border border-dashed border-white/10 bg-[#0B1320] p-8 text-center text-slate-400">
+                    {T.noResult}
+                  </section>
+                ) : null}
+              </div>
+
+              <div className="min-w-0">
+                <div className="space-y-5 xl:sticky xl:top-6">
+                  <window.V3AnalysisPanel
+                    result={result}
+                    selectedIssueId={selectedIssue?.id}
+                    onSelectIssue={selectIssue}
+                    selectedFrameIndex={selectedFrameIndex}
+                  />
+                  <section className="rounded-2xl border border-white/10 bg-[#101929] p-4">
+                    <div className="mb-3 font-semibold text-slate-100">{T.logs}</div>
+                    <pre className="max-h-56 overflow-auto whitespace-pre-wrap rounded-xl border border-white/10 bg-[#0B1320] p-3 text-xs text-slate-300">
+                      {(status?.logs || []).slice(-30).join('\n') || T.noLogs}
+                    </pre>
+                  </section>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

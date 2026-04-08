@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UX Spatial Viewer V2</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+    html, body {
+      margin: 0;
+      background:
+        radial-gradient(circle at top left, rgba(31, 98, 255, 0.16), transparent 32%),
+        radial-gradient(circle at bottom right, rgba(12, 181, 155, 0.14), transparent 28%),
+        #060b13;
+      color: #edf3ff;
+      font-family: "Pretendard", -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" src="/components/TimelineBar.jsx"></script>
+  <script type="text/babel" src="/components/FrameViewer.jsx"></script>
+  <script type="text/babel" src="/components/V2AnalysisPanel.jsx"></script>
+
+  <script type="text/babel">
+    const { useEffect, useMemo, useState } = React;
+
+    const T = {
+      mode: '\ud604\uc7ac \ubaa8\ub4dc',
+      title: 'V2 \ud0c0\uc784\ub77c\uc778 UX \ubd84\uc11d\uae30',
+      subtitle: 'V1 DOM \uad6c\uc870 + LLaVA \uc2dc\uac01 \uad00\ucc30 + Llama3 \ucd94\ub860',
+      startFail: 'V2 \ubd84\uc11d \uc2dc\uc791 \uc2e4\ud328',
+      startMessage: 'V2 \ubd84\uc11d\uc744 \uc2dc\uc791\ud588\uc2b5\ub2c8\ub2e4. \ub85c\uceec Ollama \ud30c\uc774\ud504\ub77c\uc778\uc774 \uc21c\ucc28\uc801\uc73c\ub85c \uc2e4\ud589\ub429\ub2c8\ub2e4.',
+      buttonIdle: 'V2 \ubd84\uc11d \uc2e4\ud589',
+      buttonRunning: 'V2 \ubd84\uc11d \uc911...',
+      status: '\uc0c1\ud0dc',
+      running: '\uc2e4\ud589 \uc911',
+      idle: '\ub300\uae30 \uc911',
+      lastUrl: '\ub9c8\uc9c0\ub9c9 URL',
+      progressReady: '\ubd84\uc11d \uc900\ube44 \uc911',
+      progressStarted: '\ubd84\uc11d \uc2dc\uc791',
+      progressDom: 'DOM \ubd84\uc11d \uc644\ub8cc',
+      progressFrame: '\ud504\ub808\uc784 \uc218\uc9d1 \uc644\ub8cc',
+      progressVisual: '\uc2dc\uac01 \ubd84\uc11d \uc9c4\ud589 \uc911',
+      progressChunkPlan: '\uccad\ud06c \ucd94\ub860 \uacc4\ud68d \uc0dd\uc131 \uc911',
+      progressChunk: '\uccad\ud06c \ucd94\ub860 \uc9c4\ud589 \uc911',
+      progressChunkRetry: '\uc2e4\ud328 \uccad\ud06c \uc7ac\uc2dc\ub3c4 \uc911',
+      progressChunkFallback: '\uc77c\ubd80 \uccad\ud06c \ub300\uccb4 \ubd84\uc11d \uc801\uc6a9',
+      progressSynthesis: '\uc804\uccb4 \ud1b5\ud569 \ucd94\ub860 \uc9c4\ud589 \uc911',
+      progressReasonRetry: '\ucd5c\uc885 \ucd94\ub860 \uc7ac\uc2dc\ub3c4 \uc911',
+      progressReasonRecovered: '\ucd5c\uc885 \ucd94\ub860 \uc7ac\uc2dc\ub3c4 \uc644\ub8cc',
+      progressDone: '\ubd84\uc11d \uc644\ub8cc',
+      logs: '\uc2e4\ud589 \ub85c\uadf8',
+      noLogs: '\ub85c\uadf8 \uc5c6\uc74c',
+      history: '\ud788\uc2a4\ud1a0\ub9ac',
+      historyPlaceholder: '\ubd84\uc11d \uacb0\uacfc \uc120\ud0dd',
+      noResult: '\uc120\ud0dd\ub41c \ubd84\uc11d \uacb0\uacfc\uac00 \uc5c6\uc2b5\ub2c8\ub2e4. \ud788\uc2a4\ud1a0\ub9ac\uc5d0\uc11c \uacb0\uacfc\ub97c \uace8\ub77c \ubd88\ub7ec\uc624\uc138\uc694.'
+    };
+
+    function parseProgress(status) {
+      const logs = status?.logs || [];
+      const latest = logs[logs.length - 1] || '';
+      const joined = logs.join('\n');
+
+      const frameCollection = latest.match(/Frames:\s*(\d+)/i);
+      if (frameCollection) return { label: `${T.progressFrame} (${frameCollection[1]}\uac1c)`, percent: 30 };
+
+      const llavaProgress = latest.match(/frame\s+(\d+)\/(\d+)/i);
+      if (llavaProgress) {
+        const current = Number(llavaProgress[1]);
+        const total = Number(llavaProgress[2]);
+        const ratio = total > 0 ? current / total : 0;
+        return {
+          label: `${T.progressVisual} (${current}/${total})`,
+          percent: Math.min(85, Math.max(35, Math.round(30 + ratio * 50)))
+        };
+      }
+
+      const chunkPlan = joined.match(/V2 chunk reasoning planned\. Chunks:\s*(\d+), chunk size:\s*(\d+)/i);
+      const chunkStart = latest.match(/V2 chunk reasoning start\s+(\d+)\/(\d+)\s+attempt\s+(\d+)\/(\d+)/i);
+      if (chunkStart) {
+        const current = Number(chunkStart[1]);
+        const total = Number(chunkStart[2]);
+        const attempt = Number(chunkStart[3]);
+        const maxAttempts = Number(chunkStart[4]);
+        const base = 55;
+        const span = 25;
+        const ratio = total > 0 ? (current - 1) / total : 0;
+        const label = attempt > 1
+          ? `${T.progressChunkRetry} (${current}/${total}, ${attempt}/${maxAttempts})`
+          : `${T.progressChunk} (${current}/${total})`;
+        return {
+          label,
+          percent: Math.min(84, Math.max(base, Math.round(base + ratio * span)))
+        };
+      }
+
+      const chunkDone = latest.match(/V2 chunk reasoning complete\s+(\d+)\/(\d+)\s+attempt\s+(\d+)\/(\d+)/i);
+      if (chunkDone) {
+        const current = Number(chunkDone[1]);
+        const total = Number(chunkDone[2]);
+        const ratio = total > 0 ? current / total : 0;
+        return {
+          label: `${T.progressChunk} (${current}/${total})`,
+          percent: Math.min(86, Math.max(58, Math.round(55 + ratio * 28)))
+        };
+      }
+
+      const chunkExhausted = latest.match(/V2 chunk reasoning exhausted\s+(\d+)\/(\d+)/i);
+      if (chunkExhausted) {
+        const current = Number(chunkExhausted[1]);
+        const total = Number(chunkExhausted[2]);
+        return {
+          label: `${T.progressChunkFallback} (${current}/${total})`,
+          percent: Math.min(88, Math.max(60, Math.round(55 + (current / Math.max(total, 1)) * 30)))
+        };
+      }
+
+      if (/V2 synthesis reasoning start/i.test(latest)) {
+        return { label: T.progressSynthesis, percent: 90 };
+      }
+
+      if (/V2 synthesis compact retry start/i.test(latest)) {
+        return { label: T.progressReasonRetry, percent: 93 };
+      }
+
+      if (chunkPlan) {
+        return {
+          label: `${T.progressChunkPlan} (${chunkPlan[1]}\uac1c)`,
+          percent: 52
+        };
+      }
+
+      if (/Llama3 reasoning recovered/i.test(latest)) return { label: T.progressReasonRecovered, percent: 96 };
+      if (/Llama3 reasoning failed/i.test(latest)) return { label: T.progressReasonRetry, percent: 90 };
+      if (/DOM analysis complete/i.test(latest)) return { label: T.progressDom, percent: 15 };
+      if (/Started V2 analysis/i.test(latest)) return { label: T.progressStarted, percent: 5 };
+      if (status?.running) return { label: T.progressReady, percent: 3 };
+      if (status?.exitCode === 0) return { label: T.progressDone, percent: 100 };
+      return { label: T.idle, percent: 0 };
+    }
+
+    function App() {
+      const [status, setStatus] = useState(null);
+      const [result, setResult] = useState(null);
+      const [historyItems, setHistoryItems] = useState([]);
+      const [selectedHistoryId, setSelectedHistoryId] = useState('');
+      const [url, setUrl] = useState('https://saltcake.com');
+      const [selectedFrameIndex, setSelectedFrameIndex] = useState(0);
+      const [selectedIssue, setSelectedIssue] = useState(null);
+      const [autoplay, setAutoplay] = useState(false);
+      const [message, setMessage] = useState('');
+      const [pendingAutoLoadUrl, setPendingAutoLoadUrl] = useState('');
+      const [lastCompletedRunKey, setLastCompletedRunKey] = useState('');
+
+      async function loadStatus() {
+        const res = await fetch('/api/v2/status');
+        if (!res.ok) return;
+        setStatus(await res.json());
+      }
+
+      async function loadHistory() {
+        const res = await fetch('/api/v2/history');
+        if (!res.ok) return;
+        setHistoryItems(await res.json());
+      }
+
+      async function loadHistoryResult(id) {
+        if (!id) {
+          setResult(null);
+          setSelectedHistoryId('');
+          setSelectedFrameIndex(0);
+          setSelectedIssue(null);
+          return;
+        }
+
+        const res = await fetch(`/api/v2/history/${encodeURIComponent(id)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setResult(data);
+        setSelectedHistoryId(id);
+        setSelectedFrameIndex(0);
+        setSelectedIssue(null);
+      }
+
+      useEffect(() => {
+        loadStatus();
+        loadHistory();
+      }, []);
+
+      useEffect(() => {
+        const timer = setInterval(async () => {
+          const res = await fetch('/api/v2/status');
+          if (!res.ok) return;
+          const nextStatus = await res.json();
+          setStatus(nextStatus);
+          if (nextStatus?.running) {
+            return;
+          }
+          await loadHistory();
+        }, 3000);
+        return () => clearInterval(timer);
+      }, []);
+
+      useEffect(() => {
+        if (!pendingAutoLoadUrl || !status || status.running || status.exitCode !== 0) return;
+        const runKey = `${status.endedAt || ''}|${status.lastUrl || ''}`;
+        if (!runKey || runKey === lastCompletedRunKey) return;
+
+        (async () => {
+          const res = await fetch('/api/v2/history');
+          if (!res.ok) return;
+          const items = await res.json();
+          setHistoryItems(items);
+          const latestMatch = items.find(item => item.url === pendingAutoLoadUrl) || items[0];
+          if (latestMatch?.id) {
+            await loadHistoryResult(latestMatch.id);
+            setMessage('\ucd5c\uc2e0 \ubd84\uc11d \uacb0\uacfc\ub97c \ubd88\ub7ec\uc654\uc2b5\ub2c8\ub2e4.');
+          }
+          setLastCompletedRunKey(runKey);
+          setPendingAutoLoadUrl('');
+        })();
+      }, [status, pendingAutoLoadUrl, lastCompletedRunKey]);
+
+      useEffect(() => {
+        if (!autoplay || !result?.timeline?.length) return;
+        const timer = setInterval(() => {
+          setSelectedFrameIndex(current => (current + 1) % result.timeline.length);
+        }, 1800);
+        return () => clearInterval(timer);
+      }, [autoplay, result]);
+
+      const frames = result?.timeline || [];
+      const overlays = useMemo(() => {
+        const dom = result?.dom_analysis || {};
+        return [...(dom.clickable || []), ...(dom.cards || [])];
+      }, [result]);
+      const highlightedElementIds = useMemo(() => {
+        if (!selectedIssue) return [];
+        return (selectedIssue.related_elements || []).map(item => item.id);
+      }, [selectedIssue]);
+      const progress = useMemo(() => parseProgress(status), [status]);
+
+      async function startAnalysis() {
+        setMessage('');
+        setResult(null);
+        setSelectedHistoryId('');
+        setSelectedFrameIndex(0);
+        setSelectedIssue(null);
+        setPendingAutoLoadUrl(url.trim());
+        const res = await fetch('/api/analyze-v2', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: url.trim() })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setPendingAutoLoadUrl('');
+          setMessage(data.error || T.startFail);
+          return;
+        }
+        setStatus(data.status);
+        setMessage(T.startMessage);
+      }
+
+      function selectIssue(issue) {
+        setSelectedIssue(issue);
+        if (Number.isInteger(issue.frame_index)) setSelectedFrameIndex(issue.frame_index);
+      }
+
+      const currentFrame = frames[selectedFrameIndex] || null;
+
+      return (
+        <div className="min-h-screen px-6 py-6">
+          <div className="mx-auto max-w-[1540px]">
+            <div className="mb-6 flex items-center justify-between gap-4">
+              <div>
+                <a href="/" className="text-sm text-cyan-200 hover:text-cyan-100">버전 선택으로 돌아가기</a>
+                <div className="text-xs uppercase tracking-[0.32em] text-slate-500">UX Spatial Viewer</div>
+                <h1 className="mt-2 text-[28px] font-semibold tracking-tight">{T.title}</h1>
+                <p className="mt-2 text-slate-400">{T.subtitle}</p>
+              </div>
+              <div className="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-4 py-2 text-sm text-cyan-100">
+                {T.mode}: <strong>V2</strong>
+              </div>
+            </div>
+
+            <div className="mb-6 rounded-[28px] border border-white/10 bg-[#0B111B] p-4 shadow-[0_24px_64px_rgba(0,0,0,0.25)]">
+              <div className="flex flex-col gap-3 lg:flex-row">
+                <input
+                  value={url}
+                  onChange={e => setUrl(e.target.value)}
+                  className="flex-1 rounded-2xl border border-white/10 bg-[#111827] px-4 py-3 text-slate-100 outline-none focus:border-cyan-300"
+                  placeholder="https://example.com"
+                />
+                <button
+                  type="button"
+                  onClick={startAnalysis}
+                  disabled={status?.running}
+                  className="rounded-2xl bg-cyan-300 px-5 py-3 font-semibold text-slate-950 hover:bg-cyan-200 disabled:opacity-40"
+                >
+                  {status?.running ? T.buttonRunning : T.buttonIdle}
+                </button>
+              </div>
+
+              <div className="mt-3 flex flex-col gap-2 lg:flex-row lg:items-center">
+                <div className="text-sm text-slate-400 lg:w-20">{T.history}</div>
+                <select
+                  value={selectedHistoryId}
+                  onChange={e => loadHistoryResult(e.target.value)}
+                  className="w-full rounded-2xl border border-white/10 bg-[#111827] px-4 py-3 text-slate-100 outline-none focus:border-cyan-300"
+                >
+                  <option value="">{T.historyPlaceholder}</option>
+                  {historyItems.map(item => (
+                    <option key={item.id} value={item.id}>
+                      {`${item.createdAt} / ${item.url}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-white/10 bg-[#0F1726] p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="text-sm text-slate-200">{progress.label}</div>
+                  <div className="text-sm text-cyan-200">{progress.percent}%</div>
+                </div>
+                <div className="mt-3 h-2 rounded-full bg-white/10">
+                  <div className="h-2 rounded-full bg-cyan-300 transition-all duration-500" style={{ width: `${progress.percent}%` }} />
+                </div>
+                <div className="mt-3 text-sm text-slate-400">
+                  {T.status}: {status?.running ? T.running : T.idle}
+                  {status?.lastUrl ? ` / ${T.lastUrl}: ${status.lastUrl}` : ''}
+                </div>
+                {message ? <div className="mt-2 text-sm text-slate-300">{message}</div> : null}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
+              <div className="min-w-0 space-y-5">
+                <window.FrameViewer
+                  frame={currentFrame}
+                  frames={frames}
+                  overlays={overlays}
+                  highlightedElementIds={highlightedElementIds}
+                  onPrev={() => setSelectedFrameIndex(current => Math.max(0, current - 1))}
+                  onNext={() => setSelectedFrameIndex(current => Math.min(Math.max(0, frames.length - 1), current + 1))}
+                  onToggleAutoplay={() => setAutoplay(v => !v)}
+                  autoplay={autoplay}
+                  onElementSelect={id => {
+                    if (!result) return;
+                    const issue = (result?.enhanced_issues || []).find(item =>
+                      (item.related_elements || []).some(rel => rel.id === id)
+                    );
+                    if (issue) selectIssue(issue);
+                  }}
+                />
+                <div className="w-full">
+                  <window.TimelineBar frames={frames} selectedIndex={selectedFrameIndex} onSelect={setSelectedFrameIndex} />
+                </div>
+                {!result ? (
+                  <section className="rounded-2xl border border-dashed border-white/10 bg-[#0B1320] p-8 text-center text-slate-400">
+                    {T.noResult}
+                  </section>
+                ) : null}
+              </div>
+
+              <div className="min-w-0">
+                <div className="space-y-5 xl:sticky xl:top-6">
+                  <window.V2AnalysisPanel
+                    result={result}
+                    selectedIssueId={selectedIssue?.id}
+                    onSelectIssue={selectIssue}
+                    selectedFrameIndex={selectedFrameIndex}
+                  />
+                  <section className="rounded-2xl border border-white/10 bg-[#101929] p-4">
+                    <div className="mb-3 font-semibold text-slate-100">{T.logs}</div>
+                    <pre className="max-h-56 overflow-auto whitespace-pre-wrap rounded-xl border border-white/10 bg-[#0B1320] p-3 text-xs text-slate-300">
+                      {(status?.logs || []).slice(-30).join('\n') || T.noLogs}
+                    </pre>
+                  </section>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
