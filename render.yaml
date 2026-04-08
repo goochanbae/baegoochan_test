@@ -10,6 +10,8 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 20
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: 0
       - key: OPENROUTER_API_KEY
         sync: false
       - key: OPENROUTER_V3_MODEL_1

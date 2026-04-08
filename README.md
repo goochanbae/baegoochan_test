@@ -73,4 +73,8 @@ Required environment variable:
 
 - `OPENROUTER_API_KEY`
 
+Recommended additional Render environment variable:
+
+- `PLAYWRIGHT_BROWSERS_PATH=0`
+
 Optional V3 defaults are already listed in `render.yaml`.
