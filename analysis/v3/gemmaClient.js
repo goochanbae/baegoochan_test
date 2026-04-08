@@ -10,6 +10,15 @@ const IMAGE_QUALITY = Number(process.env.OPENROUTER_V3_IMAGE_QUALITY || 72);
 
 const modelStates = new Map();
 let modelCursor = 0;
+let keyCursor = 0;
+const requestStats = {
+  logicalCalls: 0,
+  httpAttempts: 0,
+  successes: 0,
+  rateLimitErrors: 0,
+  waitEvents: 0,
+  waitedMs: 0
+};
 
 function truncateText(value, limit = 900) {
   const text = String(value || '').trim();
@@ -72,7 +81,27 @@ function getConfiguredModels() {
     return unique.slice(0, 4);
   }
 
-  return ['google/gemma-4-26b-a4b-it:free'];
+  return ['google/gemma-4-31b-it:free'];
+}
+
+function resetRequestDebugStats() {
+  requestStats.logicalCalls = 0;
+  requestStats.httpAttempts = 0;
+  requestStats.successes = 0;
+  requestStats.rateLimitErrors = 0;
+  requestStats.waitEvents = 0;
+  requestStats.waitedMs = 0;
+}
+
+function getRequestDebugStats() {
+  return {
+    logicalCalls: requestStats.logicalCalls,
+    httpAttempts: requestStats.httpAttempts,
+    successes: requestStats.successes,
+    rateLimitErrors: requestStats.rateLimitErrors,
+    waitEvents: requestStats.waitEvents,
+    waitedMs: requestStats.waitedMs
+  };
 }
 
 function getModelState(model) {
@@ -86,6 +115,12 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function formatWaitMs(ms) {
+  const safe = Math.max(0, Math.round(ms));
+  if (safe < 1000) return `${safe}ms`;
+  return `${(safe / 1000).toFixed(1)}s`;
+}
+
 function pruneOldTimestamps(state) {
   const cutoff = Date.now() - 60000;
   state.timestamps = state.timestamps.filter(value => value > cutoff);
@@ -96,6 +131,18 @@ function getModelOrder(models) {
   const ordered = [];
   for (let index = 0; index < models.length; index += 1) {
     ordered.push(models[(start + index) % models.length]);
+  }
+  return ordered;
+}
+
+function getKeyOrder(apiKeys) {
+  const start = keyCursor % apiKeys.length;
+  const ordered = [];
+  for (let index = 0; index < apiKeys.length; index += 1) {
+    ordered.push({
+      key: apiKeys[(start + index) % apiKeys.length],
+      index: (start + index) % apiKeys.length
+    });
   }
   return ordered;
 }
@@ -123,7 +170,8 @@ function getModelDebugSnapshot(models = getConfiguredModels()) {
   });
 }
 
-async function acquireModelSlot(model) {
+async function acquireModelSlot(model, options = {}) {
+  const onWait = typeof options.onWait === 'function' ? options.onWait : null;
   while (true) {
     const state = getModelState(model);
     pruneOldTimestamps(state);
@@ -134,9 +182,17 @@ async function acquireModelSlot(model) {
       return;
     }
 
-    const waitForRate = state.timestamps.length >= MODEL_LIMIT_PER_MINUTE
+    const rateLimited = state.timestamps.length >= MODEL_LIMIT_PER_MINUTE;
+    const waitForRate = rateLimited
       ? Math.max(250, 60000 - (Date.now() - state.timestamps[0]) + 50)
       : 250;
+    if (onWait) {
+      onWait({
+        model,
+        waitMs: waitForRate,
+        reason: rateLimited ? 'rpm_limit' : 'in_flight'
+      });
+    }
     await sleep(waitForRate);
   }
 }
@@ -151,6 +207,12 @@ function advanceCursor(models, model) {
   const index = models.indexOf(model);
   if (index >= 0) {
     modelCursor = (index + 1) % models.length;
+  }
+}
+
+function advanceKeyCursor(apiKeys, keyIndex) {
+  if (apiKeys.length > 0) {
+    keyCursor = (keyIndex + 1) % apiKeys.length;
   }
 }
 
@@ -358,6 +420,8 @@ async function requestOpenRouter({ apiKey, model, messages }) {
       const err = new Error(`Gemma request failed (${response.status}) for model ${model}: ${bodyText}`);
       err.status = response.status;
       err.model = model;
+      err.keyIndex = null;
+      err.keySlot = '';
       throw err;
     }
 
@@ -397,14 +461,16 @@ function shouldDisableModelFromError(err) {
 async function sendWithPolicy(messages) {
   const apiKeys = getConfiguredApiKeys();
   const models = getConfiguredModels();
+  requestStats.logicalCalls += 1;
 
   if (!apiKeys.length) {
-    throw new Error('Missing OpenRouter API key. Set OPENROUTER_API_KEY or OPENROUTER_API_KEY_1..4 in .env.');
+    throw new Error('.env에 OPENROUTER_API_KEY 또는 OPENROUTER_API_KEY_1..4를 설정해주세요.');
   }
 
   let lastError = null;
 
-  for (const apiKey of apiKeys) {
+  for (const keyEntry of getKeyOrder(apiKeys)) {
+    const apiKey = keyEntry.key;
     const enabledModels = getEnabledModels(models);
     if (!enabledModels.length) {
       break;
@@ -412,17 +478,39 @@ async function sendWithPolicy(messages) {
     const orderedModels = getModelOrder(enabledModels);
 
     for (const model of orderedModels) {
-      await acquireModelSlot(model);
+      await acquireModelSlot(model, {
+        onWait: ({ waitMs, reason }) => {
+          requestStats.waitEvents += 1;
+          requestStats.waitedMs += waitMs;
+          console.log(
+            `V3 요청 대기: 키 슬롯 ${keyEntry.index + 1}/${apiKeys.length}, 모델 ${model}, 사유 ${reason}, 대기 ${formatWaitMs(waitMs)}`
+          );
+        }
+      });
       try {
+        requestStats.httpAttempts += 1;
         const result = await requestOpenRouter({ apiKey, model, messages });
+        requestStats.successes += 1;
         advanceCursor(models, model);
+        advanceKeyCursor(apiKeys, keyEntry.index);
+        result.__meta = {
+          keyIndex: keyEntry.index,
+          keySlot: `${keyEntry.index + 1}/${apiKeys.length}`,
+          model
+        };
         return result;
       } catch (err) {
         lastError = err;
+        err.keyIndex = keyEntry.index;
+        err.keySlot = `${keyEntry.index + 1}/${apiKeys.length}`;
+        if (err.status === 429) {
+          requestStats.rateLimitErrors += 1;
+        }
         if (shouldDisableModelFromError(err)) {
           disableModel(model, err.message);
         }
         advanceCursor(models, model);
+        advanceKeyCursor(apiKeys, keyEntry.index);
       } finally {
         releaseModelSlot(model);
       }
@@ -440,7 +528,8 @@ function normalizeChunkResult(result) {
     timeline_analysis: Array.isArray(result?.timeline_analysis) ? result.timeline_analysis : [],
     flow_analysis: result?.flow_analysis || '',
     cta_analysis: result?.cta_analysis || '',
-    spatial_analysis: result?.spatial_analysis || ''
+    spatial_analysis: result?.spatial_analysis || '',
+    __meta: result?.__meta || null
   };
 }
 
@@ -501,6 +590,8 @@ module.exports = {
   getConfiguredApiKeys,
   getModelDebugSnapshot,
   getConfiguredModels,
+  getRequestDebugStats,
+  resetRequestDebugStats,
   runGemmaSynthesisReasoning,
   runGemmaVisionReasoning,
   truncateText

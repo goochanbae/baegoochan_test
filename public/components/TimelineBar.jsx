@@ -5,14 +5,14 @@ window.TimelineBar = function TimelineBar({ frames, selectedIndex, onSelect }) {
 
   if (!frames || frames.length === 0) {
     return (
-      <div className="rounded-2xl border border-white/10 bg-[#0E1724] p-4 text-sm text-slate-400">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm">
         {TEXT_EMPTY}
       </div>
     );
   }
 
   return (
-    <div className="overflow-x-auto rounded-2xl border border-white/10 bg-[#0E1724] p-3">
+    <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
       <div className="flex min-w-max gap-3">
         {frames.map(frame => {
           const selected = frame.index === selectedIndex;
@@ -23,13 +23,13 @@ window.TimelineBar = function TimelineBar({ frames, selectedIndex, onSelect }) {
               onClick={() => onSelect(frame.index)}
               className={[
                 'w-[136px] overflow-hidden rounded-2xl border text-left transition',
-                selected ? 'border-cyan-300 bg-cyan-300/10 shadow-[0_0_0_1px_rgba(125,211,252,0.4)]' : 'border-white/10 bg-[#121C2B] hover:border-white/25'
+                selected ? 'border-sky-300 bg-sky-50 shadow-[0_0_0_1px_rgba(56,189,248,0.2)]' : 'border-slate-200 bg-white hover:border-slate-300'
               ].join(' ')}
             >
               <img src={`${frame.image}?ts=${Date.now()}`} alt={`frame-${frame.index + 1}`} className="block h-[76px] w-full object-cover" />
               <div className="p-3">
                 <div className="text-xs text-slate-400">{`${TEXT_FRAME} ${frame.index + 1}`}</div>
-                <div className="mt-1 text-sm text-slate-100">{`${TEXT_SCROLL} ${frame.scrollPercent}%`}</div>
+                <div className="mt-1 text-sm font-medium text-slate-900">{`${TEXT_SCROLL} ${frame.scrollPercent}%`}</div>
                 <div className="mt-1 text-[11px] text-slate-500">{frame.scrollY}px</div>
               </div>
             </button>

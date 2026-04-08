@@ -33,26 +33,26 @@ window.FrameViewer = function FrameViewer({
   }, [frame?.id]);
 
   return (
-    <section className="w-full rounded-[28px] border border-white/10 bg-[#0B1320] p-4 shadow-[0_24px_64px_rgba(0,0,0,0.28)]">
+    <section className="w-full rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-xs uppercase tracking-[0.2em] text-slate-500">{TEXT_VIEWPORT}</div>
-          <div className="mt-1 truncate font-semibold text-slate-100">
+          <div className="text-xs uppercase tracking-[0.2em] text-slate-400">{TEXT_VIEWPORT}</div>
+          <div className="mt-1 truncate text-lg font-semibold text-slate-900">
             {frame ? `${TEXT_FRAME} ${frame.index + 1}` : TEXT_EMPTY}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <button type="button" onClick={onPrev} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 hover:bg-white/10">{TEXT_PREV}</button>
-          <button type="button" onClick={onToggleAutoplay} className="rounded-xl border border-cyan-300/30 bg-cyan-300/10 px-3 py-2 text-sm text-cyan-100 hover:bg-cyan-300/15">
+          <button type="button" onClick={onPrev} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">{TEXT_PREV}</button>
+          <button type="button" onClick={onToggleAutoplay} className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-700 hover:bg-sky-100">
             {autoplay ? TEXT_AUTOPLAY_STOP : TEXT_AUTOPLAY}
           </button>
-          <button type="button" onClick={onNext} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 hover:bg-white/10">{TEXT_NEXT}</button>
+          <button type="button" onClick={onNext} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">{TEXT_NEXT}</button>
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111826]">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
         {frame ? (
-          <div ref={scrollRef} className="max-h-[70vh] overflow-auto">
+          <div ref={scrollRef} className="max-h-[64vh] overflow-auto">
             <div className="relative w-full">
               <img
                 ref={imgRef}
@@ -79,8 +79,8 @@ window.FrameViewer = function FrameViewer({
                     onClick={() => onElementSelect(item.id)}
                     className={[
                       'absolute rounded-xl transition',
-                      item.type === 'cta' ? 'border border-rose-400/80 bg-rose-400/10' : 'border border-sky-300/70 bg-sky-300/10',
-                      active ? 'opacity-100 ring-2 ring-cyan-300 shadow-[0_0_0_1px_rgba(125,211,252,0.45)]' : 'opacity-60'
+                      item.type === 'cta' ? 'border border-rose-400/80 bg-rose-400/10' : 'border border-sky-400/80 bg-sky-300/10',
+                      active ? 'opacity-100 ring-2 ring-sky-400 shadow-[0_0_0_1px_rgba(56,189,248,0.35)]' : 'opacity-60'
                     ].join(' ')}
                     style={{
                       left: `${item.x * scaleX}px`,
@@ -94,12 +94,12 @@ window.FrameViewer = function FrameViewer({
             </div>
           </div>
         ) : (
-          <div className="flex h-[420px] items-center justify-center text-slate-400">{TEXT_EMPTY}</div>
+          <div className="flex h-[420px] items-center justify-center text-slate-500">{TEXT_EMPTY}</div>
         )}
       </div>
 
       {frames?.length ? (
-        <div className="mt-3 text-sm text-slate-400">
+        <div className="mt-3 text-sm text-slate-500">
           {`${TEXT_TOTAL} ${frames.length}\uac1c ${TEXT_FRAME} \uc911 ${TEXT_SCROLL} ${frame?.scrollPercent ?? 0}%`}
         </div>
       ) : null}

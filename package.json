@@ -4,6 +4,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node server.js",
+    "check": "node --check server.js && node --check analysis/v3/runV3.js && node --check analysis/v3/gemmaClient.js && node --check test-openrouter.js",
     "test:model": "node test-openrouter.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

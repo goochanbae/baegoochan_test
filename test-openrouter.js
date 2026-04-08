@@ -1,7 +1,7 @@
 require('dotenv').config();
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const model = process.argv[2] || 'google/gemma-4-26b-a4b-it:free';
+const model = process.argv[2] || 'google/gemma-4-31b-it:free';
 const prompt = process.argv.slice(3).join(' ').trim() || 'Say hello in Korean and English in one short sentence.';
 const REQUEST_TIMEOUT_MS = 20000;
 

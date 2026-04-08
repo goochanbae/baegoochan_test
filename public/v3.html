@@ -12,11 +12,9 @@
     @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
     html, body {
       margin: 0;
-      background:
-        radial-gradient(circle at top left, rgba(31, 98, 255, 0.16), transparent 32%),
-        radial-gradient(circle at bottom right, rgba(12, 181, 155, 0.14), transparent 28%),
-        #060b13;
-      color: #edf3ff;
+      min-height: 100%;
+      background: #f6f8fc;
+      color: #0f172a;
       font-family: "Pretendard", -apple-system, BlinkMacSystemFont, sans-serif;
     }
   </style>
@@ -33,12 +31,15 @@
 
     const T = {
       mode: '현재 모드',
-      title: 'V3 타임라인 UX 분석기',
-      subtitle: 'V1 DOM 구조 + Gemma 멀티모달 프레임 파악 + OpenRouter 추론',
-      startFail: 'V3 분석 시작 실패',
-      startMessage: 'V3 분석을 시작했습니다. Gemma 멀티모달 프레임 분석 후 OpenRouter 추론이 순차적으로 실행됩니다.',
+      subtitle: 'OpenRouter 기반 V3 UX 분석 현황',
+      urlLabel: '분석 URL',
+      historyLabel: '분석 기록',
+      historyPlaceholder: '기록을 선택하세요',
+      downloadPdf: 'PDF 다운로드',
+      startFail: 'V3 분석 시작에 실패했습니다.',
+      startMessage: 'V3 분석을 시작했습니다. 완료되면 최신 결과를 자동으로 불러옵니다.',
       buttonIdle: 'V3 분석 실행',
-      buttonRunning: 'V3 분석 중...',
+      buttonRunning: '분석 실행 중',
       status: '상태',
       running: '실행 중',
       idle: '대기 중',
@@ -47,19 +48,25 @@
       progressStarted: '분석 시작',
       progressDom: 'DOM 분석 완료',
       progressFrame: '프레임 수집 완료',
-      progressVisual: '멀티모달 프레임 분석 진행 중',
-      progressChunkPlan: '청크 분석 계획 생성 중',
-      progressChunk: '청크 분석 진행 중',
-      progressChunkFallback: '일부 청크 대체 분석 적용',
-      progressSynthesis: '전체 통합 추론 진행 중',
-      progressReasonRetry: '최종 추론 재시도 중',
-      progressReasonRecovered: '최종 추론 재시도 완료',
+      progressVisual: '멀티모달 분석 진행 중',
+      progressChunkPlan: '멀티모달 청크 계획 수립',
+      progressChunkFallback: '청크 대체 분석 적용',
+      progressSynthesis: '통합 추론 진행 중',
+      progressReasonRetry: '축약 재시도 진행 중',
+      progressReasonRecovered: '축약 재시도 복구 완료',
       progressDone: '분석 완료',
       logs: '실행 로그',
-      noLogs: '로그 없음',
-      history: '히스토리',
-      historyPlaceholder: '분석 결과 선택',
-      noResult: '선택된 분석 결과가 없습니다. 히스토리에서 결과를 골라 불러오세요.'
+      noLogs: '로그가 아직 없습니다.',
+      noResult: '아직 선택된 분석 결과가 없습니다. 실행하거나 기록에서 하나를 선택해주세요.',
+      cardRequests: '논리 요청',
+      cardAttempts: 'HTTP 시도',
+      cardFrames: '프레임',
+      cardRate: '429 응답',
+      navTitle: 'UX Spatial Viewer',
+      navOverview: 'Activity',
+      navLogs: 'Logs',
+      navSettings: 'Settings',
+      back: '버전 선택으로 돌아가기'
     };
 
     function parseProgress(status) {
@@ -67,53 +74,85 @@
       const latest = logs[logs.length - 1] || '';
       const joined = logs.join('\n');
 
-      const frameCollection = latest.match(/Frames:\s*(\d+)/i);
-      if (frameCollection) return { label: `${T.progressFrame} (${frameCollection[1]}개)`, percent: 28 };
+      if (!status?.running && status?.exitCode === 0) {
+        return { label: T.progressDone, percent: 100 };
+      }
 
-      const multimodalProgress = latest.match(/V3 multimodal chunk (?:start|complete)\s+(\d+)\/(\d+)/i);
+      const frameCollection =
+        latest.match(/프레임 수집 완료\. 프레임\s*(\d+)개/i) ||
+        latest.match(/Frames:\s*(\d+)/i);
+      if (frameCollection) return { label: `${T.progressFrame} (${frameCollection[1]}개)`, percent: 30 };
+
+      const multimodalProgress =
+        latest.match(/멀티모달 청크 (?:시작|완료)\s+(\d+)\/(\d+)/i) ||
+        latest.match(/multimodal chunk (?:start|complete)\s+(\d+)\/(\d+)/i);
       if (multimodalProgress) {
         const current = Number(multimodalProgress[1]);
         const total = Number(multimodalProgress[2]);
         const ratio = total > 0 ? current / total : 0;
         return {
           label: `${T.progressVisual} (${current}/${total})`,
-          percent: Math.min(82, Math.max(36, Math.round(30 + ratio * 48)))
+          percent: Math.min(84, Math.max(36, Math.round(32 + ratio * 48)))
         };
       }
 
-      const chunkPlan = joined.match(/V3 multimodal chunk plan\. Chunks:\s*(\d+), chunk size:\s*(\d+)/i);
+      const chunkPlan =
+        joined.match(/멀티모달 청크 계획\. 청크\s*(\d+)개,\s*청크 크기\s*(\d+)/i) ||
+        joined.match(/multimodal chunk plan\. Chunks:\s*(\d+), chunk size:\s*(\d+)/i);
       if (chunkPlan) {
         return {
           label: `${T.progressChunkPlan} (${chunkPlan[1]}개)`,
-          percent: 50
+          percent: 52
         };
       }
 
-      const chunkFailed = latest.match(/V3 multimodal chunk failed\s+(\d+)\/(\d+)/i);
+      const chunkFailed =
+        latest.match(/멀티모달 청크 실패\s+(\d+)\/(\d+)/i) ||
+        latest.match(/multimodal chunk failed\s+(\d+)\/(\d+)/i);
       if (chunkFailed) {
         const current = Number(chunkFailed[1]);
         const total = Number(chunkFailed[2]);
         return {
           label: `${T.progressChunkFallback} (${current}/${total})`,
-          percent: Math.min(88, Math.max(58, Math.round(54 + (current / Math.max(total, 1)) * 32)))
+          percent: Math.min(88, Math.max(60, Math.round(54 + (current / Math.max(total, 1)) * 30)))
         };
       }
 
-      if (/V3 synthesis reasoning start/i.test(latest)) {
+      if (/통합 추론 시작/i.test(latest) || /synthesis reasoning start/i.test(latest)) {
         return { label: T.progressSynthesis, percent: 90 };
       }
 
-      if (/V3 synthesis compact retry start/i.test(latest)) {
+      if (/축약 재시도 시작/i.test(latest) || /synthesis compact retry start/i.test(latest)) {
         return { label: T.progressReasonRetry, percent: 93 };
       }
 
-      if (/Gemma synthesis recovered/i.test(latest)) return { label: T.progressReasonRecovered, percent: 96 };
-      if (/Gemma synthesis failed/i.test(latest)) return { label: T.progressReasonRetry, percent: 91 };
-      if (/DOM analysis complete/i.test(latest)) return { label: T.progressDom, percent: 15 };
-      if (/Started V3 analysis/i.test(latest)) return { label: T.progressStarted, percent: 5 };
+      if (/분석이 정상적으로 완료되었습니다/i.test(latest) || /analysis completed successfully/i.test(latest)) {
+        return { label: T.progressDone, percent: 100 };
+      }
+      if (/복구/i.test(latest) || /recovered/i.test(latest)) return { label: T.progressReasonRecovered, percent: 96 };
+      if (/DOM 분석 완료/i.test(latest) || /DOM analysis complete/i.test(latest)) return { label: T.progressDom, percent: 16 };
+      if (/V3 분석을 시작했습니다/i.test(latest) || /Started V3 analysis/i.test(latest)) return { label: T.progressStarted, percent: 5 };
       if (status?.running) return { label: T.progressReady, percent: 3 };
-      if (status?.exitCode === 0) return { label: T.progressDone, percent: 100 };
       return { label: T.idle, percent: 0 };
+    }
+
+    function formatRunMeta(result) {
+      const meta = result?.analysis_meta;
+      return {
+        logicalCalls: meta?.openrouter_requests?.logicalCalls ?? 0,
+        httpAttempts: meta?.openrouter_requests?.httpAttempts ?? 0,
+        frames: meta?.multimodal?.frame_count ?? result?.timeline?.length ?? 0,
+        rateLimitErrors: meta?.openrouter_requests?.rateLimitErrors ?? 0
+      };
+    }
+
+    function MetricCard({ label, value, accent }) {
+      return (
+        <section className="rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="text-sm font-medium text-slate-500">{label}</div>
+          <div className={`mt-2 text-3xl font-semibold tracking-tight ${accent || 'text-slate-900'}`}>{value}</div>
+        </section>
+      );
     }
 
     function App() {
@@ -170,9 +209,7 @@
           if (!res.ok) return;
           const nextStatus = await res.json();
           setStatus(nextStatus);
-          if (nextStatus?.running) {
-            return;
-          }
+          if (nextStatus?.running) return;
           await loadHistory();
         }, 3000);
         return () => clearInterval(timer);
@@ -216,6 +253,7 @@
         return (selectedIssue.related_elements || []).map(item => item.id);
       }, [selectedIssue]);
       const progress = useMemo(() => parseProgress(status), [status]);
+      const metrics = useMemo(() => formatRunMeta(result), [result]);
 
       async function startAnalysis() {
         setMessage('');
@@ -244,120 +282,158 @@
         if (Number.isInteger(issue.frame_index)) setSelectedFrameIndex(issue.frame_index);
       }
 
+      function downloadPdf() {
+        const query = selectedHistoryId ? `?id=${encodeURIComponent(selectedHistoryId)}` : '';
+        window.open(`/api/v3/export/pdf${query}`, '_blank', 'noopener,noreferrer');
+      }
+
       const currentFrame = frames[selectedFrameIndex] || null;
 
       return (
-        <div className="min-h-screen px-6 py-6">
-          <div className="mx-auto max-w-[1540px]">
-            <div className="mb-6 flex items-center justify-between gap-4">
-              <div>
-                <a href="/" className="text-sm text-cyan-200 hover:text-cyan-100">버전 선택으로 돌아가기</a>
-                <div className="text-xs uppercase tracking-[0.32em] text-slate-500">UX Spatial Viewer</div>
-                <h1 className="mt-2 text-[28px] font-semibold tracking-tight">{T.title}</h1>
-                <p className="mt-2 text-slate-400">{T.subtitle}</p>
-              </div>
-              <div className="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-4 py-2 text-sm text-cyan-100">
-                {T.mode}: <strong>V3</strong>
-              </div>
+        <div className="flex min-h-screen bg-[#f6f8fc] text-slate-900">
+          <aside className="hidden w-56 shrink-0 border-r border-slate-200 bg-[#fbfcfe] xl:flex xl:flex-col">
+            <div className="border-b border-slate-200 px-5 py-5">
+              <div className="text-[22px] font-semibold tracking-tight text-slate-900">OpenRouter</div>
+              <div className="mt-1 text-sm text-slate-500">{T.navTitle}</div>
             </div>
+            <nav className="flex-1 px-3 py-4 text-sm">
+              <a href="/" className="mb-2 block rounded-2xl px-4 py-3 font-medium text-slate-700 hover:bg-slate-100">{T.back}</a>
+              <div className="mb-2 rounded-2xl bg-slate-100 px-4 py-3 font-semibold text-slate-900">{T.navOverview}</div>
+              <div className="mb-2 rounded-2xl px-4 py-3 text-slate-300">{T.navLogs}</div>
+              <div className="rounded-2xl px-4 py-3 text-slate-300">{T.navSettings}</div>
+            </nav>
+          </aside>
 
-            <div className="mb-6 rounded-[28px] border border-white/10 bg-[#0B111B] p-4 shadow-[0_24px_64px_rgba(0,0,0,0.25)]">
-              <div className="flex flex-col gap-3 lg:flex-row">
-                <input
-                  value={url}
-                  onChange={e => setUrl(e.target.value)}
-                  className="flex-1 rounded-2xl border border-white/10 bg-[#111827] px-4 py-3 text-slate-100 outline-none focus:border-cyan-300"
-                  placeholder="https://example.com"
-                />
-                <button
-                  type="button"
-                  onClick={startAnalysis}
-                  disabled={status?.running}
-                  className="rounded-2xl bg-cyan-300 px-5 py-3 font-semibold text-slate-950 hover:bg-cyan-200 disabled:opacity-40"
-                >
-                  {status?.running ? T.buttonRunning : T.buttonIdle}
-                </button>
-              </div>
+          <main className="min-w-0 flex-1">
+            <div className="p-4 md:p-5 xl:p-6">
+              <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                  <div className="max-w-2xl">
+                    <div className="text-[22px] font-semibold tracking-tight text-slate-950">Activity</div>
+                    <p className="mt-1 text-sm text-slate-400">{T.subtitle}</p>
+                  </div>
+                  <div className="grid w-full max-w-2xl grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_170px]">
+                    <div>
+                      <div className="mb-1.5 text-sm font-medium text-slate-500">{T.urlLabel}</div>
+                      <input
+                        value={url}
+                        onChange={e => setUrl(e.target.value)}
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-slate-900 outline-none transition focus:border-sky-300 focus:bg-white"
+                        placeholder="https://example.com"
+                      />
+                    </div>
+                    <div className="flex items-end">
+                      <button
+                        type="button"
+                        onClick={startAnalysis}
+                        disabled={status?.running}
+                        className="w-full rounded-2xl bg-slate-950 px-5 py-2.5 font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {status?.running ? T.buttonRunning : T.buttonIdle}
+                      </button>
+                    </div>
+                  </div>
+                </div>
 
-              <div className="mt-3 flex flex-col gap-2 lg:flex-row lg:items-center">
-                <div className="text-sm text-slate-400 lg:w-20">{T.history}</div>
-                <select
-                  value={selectedHistoryId}
-                  onChange={e => loadHistoryResult(e.target.value)}
-                  className="w-full rounded-2xl border border-white/10 bg-[#111827] px-4 py-3 text-slate-100 outline-none focus:border-cyan-300"
-                >
-                  <option value="">{T.historyPlaceholder}</option>
-                  {historyItems.map(item => (
-                    <option key={item.id} value={item.id}>
-                      {`${item.createdAt} / ${item.url}`}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_280px]">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="text-sm font-medium text-slate-700">{progress.label}</div>
+                      <div className="text-sm font-semibold text-slate-900">{progress.percent}%</div>
+                    </div>
+                    <div className="mt-2 h-2 rounded-full bg-slate-200">
+                      <div className="h-2 rounded-full bg-sky-500 transition-all duration-500" style={{ width: `${progress.percent}%` }} />
+                    </div>
+                    <div className="mt-2 text-sm text-slate-500">
+                      {T.status}: {status?.running ? T.running : T.idle}
+                      {status?.lastUrl ? ` / ${T.lastUrl}: ${status.lastUrl}` : ''}
+                    </div>
+                    {message ? <div className="mt-1.5 text-sm text-slate-600">{message}</div> : null}
+                  </div>
 
-              <div className="mt-4 rounded-2xl border border-white/10 bg-[#0F1726] p-4">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="text-sm text-slate-200">{progress.label}</div>
-                  <div className="text-sm text-cyan-200">{progress.percent}%</div>
+                  <div>
+                    <div className="mb-1.5 flex items-center justify-between gap-3">
+                      <div className="text-sm font-medium text-slate-500">{T.historyLabel}</div>
+                      <button
+                        type="button"
+                        onClick={downloadPdf}
+                        disabled={!result}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {T.downloadPdf}
+                      </button>
+                    </div>
+                    <select
+                      value={selectedHistoryId}
+                      onChange={e => loadHistoryResult(e.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-slate-900 outline-none transition focus:border-sky-300 focus:bg-white"
+                    >
+                      <option value="">{T.historyPlaceholder}</option>
+                      {historyItems.map(item => (
+                        <option key={item.id} value={item.id}>
+                          {`${item.createdAt} / ${item.url}`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
-                <div className="mt-3 h-2 rounded-full bg-white/10">
-                  <div className="h-2 rounded-full bg-cyan-300 transition-all duration-500" style={{ width: `${progress.percent}%` }} />
+              </section>
+
+              <section className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <MetricCard label={T.cardRequests} value={metrics.logicalCalls} accent="text-slate-950" />
+                <MetricCard label={T.cardAttempts} value={metrics.httpAttempts} accent="text-sky-600" />
+                <MetricCard label={T.cardFrames} value={metrics.frames} accent="text-emerald-600" />
+                <MetricCard label={T.cardRate} value={metrics.rateLimitErrors} accent="text-amber-600" />
+              </section>
+
+              <section className="mt-4 grid grid-cols-1 items-start gap-6 xl:h-[calc(100vh-2rem)] xl:overflow-hidden xl:grid-cols-[minmax(0,1fr)_430px]">
+                <div className="min-w-0 xl:h-full">
+                  <div className="space-y-5 xl:sticky xl:top-0 xl:h-full xl:overflow-y-auto xl:pr-1">
+                    <window.FrameViewer
+                      frame={currentFrame}
+                      frames={frames}
+                      overlays={overlays}
+                      highlightedElementIds={highlightedElementIds}
+                      onPrev={() => setSelectedFrameIndex(current => Math.max(0, current - 1))}
+                      onNext={() => setSelectedFrameIndex(current => Math.min(Math.max(0, frames.length - 1), current + 1))}
+                      onToggleAutoplay={() => setAutoplay(v => !v)}
+                      autoplay={autoplay}
+                      onElementSelect={id => {
+                        if (!result) return;
+                        const issue = (result?.enhanced_issues || []).find(item =>
+                          (item.related_elements || []).some(rel => rel.id === id)
+                        );
+                        if (issue) selectIssue(issue);
+                      }}
+                    />
+                    <window.TimelineBar frames={frames} selectedIndex={selectedFrameIndex} onSelect={setSelectedFrameIndex} />
+                    {!result ? (
+                      <section className="rounded-[28px] border border-dashed border-slate-300 bg-white p-8 text-center text-slate-500 shadow-sm">
+                        {T.noResult}
+                      </section>
+                    ) : null}
+                  </div>
                 </div>
-                <div className="mt-3 text-sm text-slate-400">
-                  {T.status}: {status?.running ? T.running : T.idle}
-                  {status?.lastUrl ? ` / ${T.lastUrl}: ${status.lastUrl}` : ''}
+
+                <div className="min-w-0 xl:h-full xl:overflow-y-auto xl:pr-1">
+                  <div className="space-y-5">
+                    <window.V3AnalysisPanel
+                      result={result}
+                      selectedIssueId={selectedIssue?.id}
+                      onSelectIssue={selectIssue}
+                      selectedFrameIndex={selectedFrameIndex}
+                    />
+                    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="mb-3 font-semibold text-slate-900">{T.logs}</div>
+                      <pre className="max-h-[320px] overflow-auto whitespace-pre-wrap rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs leading-6 text-slate-700">
+                        {(status?.logs || []).slice(-40).join('\n') || T.noLogs}
+                      </pre>
+                    </section>
+                  </div>
                 </div>
-                {message ? <div className="mt-2 text-sm text-slate-300">{message}</div> : null}
-              </div>
+              </section>
             </div>
-
-            <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
-              <div className="min-w-0 space-y-5">
-                <window.FrameViewer
-                  frame={currentFrame}
-                  frames={frames}
-                  overlays={overlays}
-                  highlightedElementIds={highlightedElementIds}
-                  onPrev={() => setSelectedFrameIndex(current => Math.max(0, current - 1))}
-                  onNext={() => setSelectedFrameIndex(current => Math.min(Math.max(0, frames.length - 1), current + 1))}
-                  onToggleAutoplay={() => setAutoplay(v => !v)}
-                  autoplay={autoplay}
-                  onElementSelect={id => {
-                    if (!result) return;
-                    const issue = (result?.enhanced_issues || []).find(item =>
-                      (item.related_elements || []).some(rel => rel.id === id)
-                    );
-                    if (issue) selectIssue(issue);
-                  }}
-                />
-                <div className="w-full">
-                  <window.TimelineBar frames={frames} selectedIndex={selectedFrameIndex} onSelect={setSelectedFrameIndex} />
-                </div>
-                {!result ? (
-                  <section className="rounded-2xl border border-dashed border-white/10 bg-[#0B1320] p-8 text-center text-slate-400">
-                    {T.noResult}
-                  </section>
-                ) : null}
-              </div>
-
-              <div className="min-w-0">
-                <div className="space-y-5 xl:sticky xl:top-6">
-                  <window.V3AnalysisPanel
-                    result={result}
-                    selectedIssueId={selectedIssue?.id}
-                    onSelectIssue={selectIssue}
-                    selectedFrameIndex={selectedFrameIndex}
-                  />
-                  <section className="rounded-2xl border border-white/10 bg-[#101929] p-4">
-                    <div className="mb-3 font-semibold text-slate-100">{T.logs}</div>
-                    <pre className="max-h-56 overflow-auto whitespace-pre-wrap rounded-xl border border-white/10 bg-[#0B1320] p-3 text-xs text-slate-300">
-                      {(status?.logs || []).slice(-30).join('\n') || T.noLogs}
-                    </pre>
-                  </section>
-                </div>
-              </div>
-            </div>
-          </div>
+          </main>
         </div>
       );
     }
