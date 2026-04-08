@@ -12,7 +12,7 @@ window.TimelineBar = function TimelineBar({ frames, selectedIndex, onSelect }) {
   }
 
   return (
-    <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+    <div className="timeline-scroll rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
       <div className="flex min-w-max gap-3">
         {frames.map(frame => {
           const selected = frame.index === selectedIndex;
