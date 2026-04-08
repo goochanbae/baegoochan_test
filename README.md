@@ -66,7 +66,7 @@ Recommended Render settings for an existing Web Service:
 
 - Runtime: `Node`
 - Branch: `main`
-- Build Command: `npm ci && npx playwright install chromium`
+- Build Command: `PLAYWRIGHT_BROWSERS_PATH=0 npm ci && PLAYWRIGHT_BROWSERS_PATH=0 npx playwright install chromium`
 - Start Command: `npm start`
 
 Required environment variable:
@@ -78,3 +78,8 @@ Recommended additional Render environment variable:
 - `PLAYWRIGHT_BROWSERS_PATH=0`
 
 Optional V3 defaults are already listed in `render.yaml`.
+
+Important note:
+
+- If you already created the Render Web Service manually, `render.yaml` env vars are not automatically injected into that existing service unless you are using a Blueprint flow.
+- For an existing service, set `PLAYWRIGHT_BROWSERS_PATH=0` directly in the Render dashboard as an environment variable.
