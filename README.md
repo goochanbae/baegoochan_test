@@ -52,3 +52,25 @@ Codespaces config:
 ## Environment Variables
 
 Before running V3, create `.env` from `.env.example` and set your OpenRouter key(s).
+
+## Render Deployment
+
+This repo is also prepared for Render.
+
+Relevant files:
+
+- [`render.yaml`](./render.yaml)
+- [`.node-version`](./.node-version)
+
+Recommended Render settings for an existing Web Service:
+
+- Runtime: `Node`
+- Branch: `main`
+- Build Command: `npm ci && npx playwright install chromium`
+- Start Command: `npm start`
+
+Required environment variable:
+
+- `OPENROUTER_API_KEY`
+
+Optional V3 defaults are already listed in `render.yaml`.

@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: ux-spatial-viewer
+    runtime: node
+    plan: free
+    branch: main
+    buildCommand: npm ci && npx playwright install chromium
+    startCommand: npm start
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_V3_MODEL_1
+        value: google/gemma-4-31b-it:free
+      - key: OPENROUTER_V3_MODEL_2
+        value: google/gemma-4-31b-it:free
+      - key: OPENROUTER_V3_MODEL_3
+        value: google/gemma-4-31b-it:free
+      - key: OPENROUTER_V3_MODEL_4
+        value: google/gemma-4-31b-it:free
+      - key: V3_MULTIMODAL_BATCH_SIZE
+        value: 12
