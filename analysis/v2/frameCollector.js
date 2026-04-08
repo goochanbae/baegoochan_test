@@ -39,6 +39,7 @@ async function collectFrames(page, options = {}) {
   const maxFrames = options.maxFrames || 18;
   const delayMs = options.delayMs || 280;
   const viewport = options.viewport || { width: 1440, height: 900 };
+  const imageBasePath = String(options.imageBasePath || '/v2/frames').replace(/\/$/, '');
 
   if (!outDir) {
     throw new Error('collectFrames requires outDir.');
@@ -83,7 +84,7 @@ async function collectFrames(page, options = {}) {
       index: i,
       scrollY: y,
       scrollPercent: Math.round((y / Math.max(1, pageMeta.height - viewport.height)) * 100),
-      image: `/v2/frames/${path.basename(framePath)}`
+      image: `${imageBasePath}/${path.basename(framePath)}`
     });
   }
 

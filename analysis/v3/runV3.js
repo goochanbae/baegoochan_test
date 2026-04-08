@@ -233,6 +233,7 @@ async function run() {
     const framesDir = path.join(process.cwd(), 'public', 'v3', 'frames');
     const { frames, pageMeta } = await collectFrames(session.page, {
       outDir: framesDir,
+      imageBasePath: '/v3/frames',
       viewport,
       step: Number(process.env.V3_FRAME_STEP || process.env.V2_FRAME_STEP || 560),
       maxFrames: Number(process.env.V3_MAX_FRAMES || process.env.V2_MAX_FRAMES || 10),
